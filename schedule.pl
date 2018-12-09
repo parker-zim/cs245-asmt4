@@ -28,19 +28,28 @@
 %%    prereqs(cs101,[]).
 %%    prereqs(cs145,[cs101]).
 
+%% 100 Level Courses
 prereqs(cs101,[]).
 prereqs(cs102, [cs101]).
 prereqs(cs145, [cs101]).
+
+%% 200 Level Required
 prereqs(cs203, [cs102]).
 prereqs(cs224, [cs102, cs145]).
-prereqs(cs235, [cs102, cs145]).
 prereqs(cs240, [cs102, cs145]).
 prereqs(cs241, [cs102, cs145]).
+
+%% 200 Level Electives
+prereqs(cs235, [cs102, cs145]).
 prereqs(cs245, [cs102, cs145]).
 prereqs(cs250, [cs102]).
-prereqs(cs324, [cs224]).
+
+%% 300 Level Required
 prereqs(cs331, [cs224, cs240]).
 prereqs(cs334, [cs203, cs224]).
+
+%% 300 Level Electives
+prereqs(cs324, [cs224]).
 prereqs(cs353, [cs203]).
 prereqs(cs365, [cs145, cs203, cs245]).
 prereqs(cs366, [cs240]).
@@ -135,25 +144,42 @@ offeredList(cs379,[3,7]).
 %%     *OR* PrevCourses must contain at least 2 200-level courses"
 
 %%  (Hint:  How is "disjunction" (i.e., OR) represented in Prolog syntax?)
-lowerLevel(C) :- subset([C], [cs101,cs102,cs145,cs203,cs224,cs234,cs240,cs241,cs245,cs250]).
-midLevel(C) :- subset([C], [cs203,cs224,cs234,cs240,cs241,cs245,cs250]).
 
-atLeastNTwos(0,PrevCourses).
+%% Checks if course C is a lower level course
+lowerLevel(C) :- member(C, [cs101,cs102,cs145,cs203,cs224,cs235,cs240,cs241,cs245,cs250]).
+
+%% Checks if course C is a 200 level course
+midLevel(C) :- member(C, [cs203,cs224,cs235,cs240,cs241,cs245,cs250]).
+
+%% Checks if PrevCourses contains at least N 200 level courses
+atLeastNTwos(0, _PrevCourses).
 atLeastNTwos(N,PrevCourses) :-
-    subset([C], PrevCourses),
+    %% there is a midlevel course C that is in PrevCourses
     midLevel(C),
+    member(C, PrevCourses),
+    %% remove course C from PrevCourses and decrement the number
+    %% of 200s that are still needed before recursive call
     delete(PrevCourses, C, RestC),
-    atLeastNTwos(N-1, RestC).
+    NDec is N -1,
+    atLeastNTwos(NDec, RestC).
 
 canTake(C, PrevCourses, Sem) :-
-    offered(C, Sem),
+    %% if C is a lower level:
     lowerLevel(C),
-    prereqs(C, PrevCourses).
-canTake(C, PrevCourses, Sem) :-
+    %% check that it is currently offered and the prereqs have been taken
     offered(C, Sem),
-    \+lowerLevel(C),
+    prereqs(C, Cs),
+    subset(Cs,PrevCourses).
+
+canTake(C, PrevCourses, Sem) :-
+    %% if C is not a lower level:
+  \+lowerLevel(C),
+    %% need at least 2 200 level courses
     atLeastNTwos(2, PrevCourses),
-    prereqs(C, PrevCourses).
+    %% check that it is currently offere and the prereqs have been taken
+    offered(C, Sem),
+    prereqs(C, Cs),
+    subset(Cs,PrevCourses).
 
 %%  3.  selectCourse
 %% ---------------------------------------------------------------
@@ -167,8 +193,10 @@ canTake(C, PrevCourses, Sem) :-
 %%  map-coloring code.)
 
 selectCourse(C,PrevCourses,CoursesLeft,RemCourses,Sem) :-
-    canTake(C, PrevCourses,Sem),
-    select(CoursesLeft, C, RemCourses).
+    %% if course C can be taken:
+    canTake(C, PrevCourses, Sem),
+    %% remove C from Courses Left
+    delete(CoursesLeft, C, RemCourses).
 
 
 %%  4.  incrementally fleshing out a full schedule
@@ -217,7 +245,36 @@ selectCourse(C,PrevCourses,CoursesLeft,RemCourses,Sem) :-
 %%     a solution faster.)
 %% (3) is not allowed if CoursesLeft is not empty, among other things.
 
-%%  Here's case (3), done for you!
+%% Case (1): can still take more CS classes
+
+fillSched(PrevSched, PrevCourses, CurrCourses, MaxPer, CoursesLeft, Sem, FullSched) :-
+  %% if haven't reached max number of CS courses
+  length(CurrCourses, Lngth),
+  Lngth < MaxPer,
+  %% attempt to select a course C from CoursesLeft
+  member(C, CoursesLeft),
+  selectCourse(C, PrevCourses, CoursesLeft, RemCourses, Sem),
+  %% if a course was found that can be taken recursive call with C added to the 
+  %% courses currently being taken
+  fillSched(PrevSched, PrevCourses, [C|CurrCourses], MaxPer, RemCourses, Sem, FullSched).
+
+%% Case (2): can't take anymore CS courses because either takeing the max number of courses
+%% or don't have the prereqs for any other courses
+
+fillSched(PrevSched, PrevCourses, CurrCourses, MaxPer, CoursesLeft, Sem, FullSched) :-
+  %% check if possible to complete number of classes left in remaining semesters
+  length(CoursesLeft, N),
+  RemSems is (8 - Sem),
+  N =< MaxPer * RemSems,
+  %% increment semester
+  NextSem is (Sem + 1),
+  %% add the courses taken during Sem to PrevCourses
+  append(CurrCourses,PrevCourses,TotalCourses),
+  %% recursive call with Sem/Courses added to PrevSched, new PrevCourses, CurrCourses set to
+  %% the empty set
+  fillSched([Sem/CurrCourses|PrevSched], TotalCourses, [], MaxPer, CoursesLeft, NextSem , FullSched).
+  
+  %%  Here's case (3), done for you!
 
 fillSched(PrevSched, _PrevCourses, [], _MaxPer, [], 9, FullSched) :-
   %% Since accumulating schedule in a list, it comes out backwards;
@@ -307,8 +364,56 @@ tester(0,F) :-
 %%  is a different number).  That way, at the command line, you can just type:
 %%  tester(0,F) instead of the whole big mess above.
 
-tester(_N,F) :-
-  write('This test not yet defined!\n').
+tester(0,F) :-
+  PrevSched = [1/[cs101],2/[cs145,cs102],3/[cs224,cs203],4/[cs235,cs240],
+               5/[cs376,cs241],6/[cs366,cs331],7/[cs334],8/[]],
+  PrevCourses = [cs101,cs102,cs145,cs203,cs224,cs240,cs241,cs235,cs331,cs334,cs366,cs376],
+  fillSched(PrevSched, PrevCourses, [], 2, [], 9, F).
+tester(1,F) :-
+  PrevSched = [],
+  PrevCourses = [],
+  fillSched(PrevSched, PrevCourses, [], 3, [cs101,cs102,cs145,cs203,cs224,cs240,cs241,
+      cs245,cs331,cs334,cs324,cs365,cs377], 1, F).
+tester(2,F) :-
+  PrevSched = [],
+  PrevCourses = [],
+  fillSched(PrevSched, PrevCourses, [], 2, [cs101,cs102,cs145,cs203,cs224,cs240,cs241,
+      cs245,cs331,cs334,cs324,cs365,cs377], 1, F).
+tester(3,F) :-
+  PrevSched = [2/[cs145,cs102],1/[cs101]],
+  PrevCourses = [cs101,cs102,cs145],
+  fillSched(PrevSched, PrevCourses, [], 3, [cs203,cs224,cs240,cs241,cs235,
+    cs331,cs334,cs324,cs353,cs375], 3, F).
+tester(4,F) :-
+  PrevSched = [2/[cs145],1/[cs101]],
+  PrevCourses = [cs101,cs145],
+  fillSched(PrevSched, PrevCourses, [], 3, [cs102,cs203,cs224,cs240,cs241,
+    cs250,cs331,cs334,cs324,cs378,cs379], 3, F).
+tester(5,F) :-
+  PrevSched = [2/[cs102],1/[cs101]],
+  PrevCourses = [cs101,cs102],
+  fillSched(PrevSched, PrevCourses, [], 2, [cs145,cs203,cs224,cs240,cs241,cs235,
+      cs331,cs334,cs324,cs365], 3, F).
+tester(6,F) :-
+  PrevSched = [4/[cs224,cs240],3/[cs203],2/[cs145,cs102],1/[cs101]],
+  PrevCourses = [cs101,cs102,cs145,cs203,cs224,cs240],
+  fillSched(PrevSched, PrevCourses, [], 3, [cs241,cs245,cs331,cs334,
+    cs324,cs353], 5, F).
+tester(7,F) :-
+  PrevSched = [4/[cs145,cs203],3/[cs102],2/[cs101],1/[]],
+  PrevCourses = [cs101,cs102,cs145,cs203],
+  fillSched(PrevSched, PrevCourses, [], 3, [cs224,cs240,cs241,cs245,
+    cs331,cs334,cs365,cs366], 5, F).
+tester(8,F) :-
+  PrevSched = [3/[],2/[],1/[]],
+  PrevCourses = [],
+  fillSched(PrevSched, PrevCourses, [], 3, [cs101,cs102,cs145,cs203,cs224,cs240,cs241,
+      cs245,cs331,cs334,cs324,cs365,cs377], 4, F).
+tester(9,F) :-
+  PrevSched = [7/[cs334],6/[cs366,cs331],5/[cs376,cs241],4/[cs235,cs240],
+    3/[cs224,cs203],2/[cs145,cs102],1/[cs101]],
+  PrevCourses = [cs101,cs102,cs145,cs203,cs224,cs240,cs241,cs235,cs331,cs334,cs366,cs376],
+  fillSched(PrevSched, PrevCourses, [], 2, [], 8, F).
 
 %%  You should define MANY such test expressions for fillSched.
 
